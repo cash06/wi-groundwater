@@ -2077,15 +2077,16 @@ function csvCell(v){
 function csvOf(rows){ return rows.map(function(r){ return r.map(csvCell).join(','); }).join('\n'); }
 
 document.getElementById('sh-csv').addEventListener('click', function(){
-  // exactly the wells on screen, so the CSV matches the figure it accompanies
-  var head = ['well','municipality','county','lat','lon','aquifer','grade','score',
+  // exactly the wells on screen, so the CSV matches the figure it accompanies;
+  // coordinates are deliberately left out of anything downloadable
+  var head = ['well','municipality','county','aquifer','grade','score',
               'well_depth_ft','depth_to_bedrock_ft','produces_from',
               'median_depth_to_water_ft','median_head_ft','seasonal_range_ft','readings'];
   if(timeMode) head = head.concat(['month','depth_to_water_ft','source']);
   var rows = [head];
   visIdx.forEach(function(i){
     var w = wells[i];
-    var r = [w.id, w.muni, w.county, w.lat, w.lon, w.aq, w.grade, w.score, w.wd,
+    var r = [w.id, w.muni, w.county, w.aq, w.grade, w.score, w.wd,
              (w.bd == null ? 'below well' : w.bd), w.lith, w.dtw, w.head, w.sr, w.n];
     if(timeMode){
       var age = wellAge(w), d = wellDtwNow(w);
