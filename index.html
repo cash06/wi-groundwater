@@ -242,6 +242,34 @@ input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer;margin:0}
 .pen-t td.n{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .pen-t tr.zero td{color:var(--ink-3)}
 
+/* ---- guided tour ---- */
+#tour-go{display:block;width:100%;margin-top:11px;padding:7px 10px;cursor:pointer;
+         font-family:var(--f-ui);font-size:11.5px;font-weight:500;color:#fff;
+         background:var(--accent);border:1px solid var(--accent);border-radius:2px}
+#tour-go:hover{filter:brightness(1.08)}
+#tour-go:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+/* sits in the open floor between the left column and the rail, centred there */
+#tour-wrap{position:fixed;bottom:16px;left:342px;right:300px;z-index:30;
+           display:flex;justify-content:center;pointer-events:none}
+#tour{pointer-events:auto;width:100%;max-width:480px;padding:13px 16px 12px}
+.tour-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+#tour h2{font-family:var(--f-disp);font-weight:600;font-size:17px;line-height:1.2;margin:6px 0 0;
+         text-wrap:balance}
+#tour p{font-size:12px;line-height:1.55;color:var(--ink-2);margin:7px 0 0}
+#tour p b{color:var(--ink);font-weight:600}
+.tour-f{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px}
+#tour-dots{display:flex;gap:4px}
+#tour-dots i{width:6px;height:6px;border-radius:50%;background:var(--line)}
+#tour-dots i.on{background:var(--accent)}
+.tour-b{display:flex;gap:5px}
+#tour button{font-family:var(--f-ui);font-size:11px;padding:5px 11px;cursor:pointer;
+             background:transparent;color:var(--ink-2);border:1px solid var(--line);border-radius:2px}
+#tour button:hover{color:var(--ink);border-color:var(--ink-3)}
+#tour #tour-next{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+#tour #tour-x{font-size:10px;padding:3px 8px}
+#tour button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#tour button:disabled{opacity:.35;cursor:default}
+
 /* ---- footer note ---- */
 #hint{position:fixed;bottom:16px;left:16px;z-index:10;max-width:310px;padding:11px 13px}
 #hint p{margin:0;font-size:10.5px;line-height:1.55;color:var(--ink-2)}
@@ -260,6 +288,7 @@ input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer;margin:0}
   #masthead,#hint{max-width:240px}
   #rightcol{width:232px}
   #timebar{left:272px;right:264px}
+  #tour-wrap{left:272px;right:264px}
 }
 @media (max-width:800px){
   #hint{display:none}
@@ -270,6 +299,7 @@ input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer;margin:0}
   #read{display:none}
   #timebar{left:228px;right:12px}
   #tb-speed{display:none}
+  #tour-wrap{left:12px;right:12px;bottom:12px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -292,6 +322,7 @@ input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer;margin:0}
     <div><b class="num" id="t-read">..</b><span>readings each</span></div>
     <div><b class="num" id="t-a">..</b><span>graded A</span></div>
   </div>
+  <button id="tour-go" type="button">Take the guided tour &#9656;</button>
 </header>
 
 <section id="timebar" class="panel" aria-label="Timeline">
@@ -439,6 +470,22 @@ input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer;margin:0}
      is confinement. Depth to water is read off as the gap to the land surface.</p>
   <button id="method-b" aria-expanded="false">Method</button>
 </footer>
+
+<div id="tour-wrap" hidden>
+  <section id="tour" class="panel" role="dialog" aria-label="Guided tour" aria-live="polite">
+    <div class="tour-h"><div class="eyebrow" id="tour-e">Tour</div>
+      <button id="tour-x" type="button" aria-label="End the tour and return to your view">End tour</button></div>
+    <h2 id="tour-t"></h2>
+    <p id="tour-p"></p>
+    <div class="tour-f">
+      <div id="tour-dots" aria-hidden="true"></div>
+      <div class="tour-b">
+        <button id="tour-back" type="button">Back</button>
+        <button id="tour-next" type="button">Next</button>
+      </div>
+    </div>
+  </section>
+</div>
 
 <div id="tip" hidden></div>
 <div id="modal" hidden>
@@ -706,6 +753,40 @@ function ALL_SURF(){
 /* ---------- wells: a stick from land surface down to measured water ------- */
 var wells = M.wells;
 var bandOf = M.meta.bands;
+
+/* Most wells are located only to their PLSS section centroid, so every well in a
+   section shares one point: 921 wells sit on 373 shared spots, and all but one of
+   each group was hidden under the others. For DISPLAY only, each group is fanned
+   out around its centroid (px, py); x and y stay the true centroid and are what the
+   builder interpolated from. A marker's on-screen size scales with the scene, so it
+   covers about size*tan(fov/2) scene units at every zoom -- spreading by less than
+   that would never separate them, however far you zoomed in. */
+(function(){
+  // a marker's width in metres (~1.45 km), plus a margin: markers are squares, so two
+  // exactly one width apart still overlap at the corners on a diagonal
+  var D = 1.3 * 1.05 * Math.tan(19 * Math.PI/180) / SC;
+  var groups = {};
+  wells.forEach(function(w){
+    w.px = w.x; w.py = w.y; w.share = 0;
+    var k = w.x.toFixed(1) + ',' + w.y.toFixed(1);
+    (groups[k] = groups[k] || []).push(w);
+  });
+  Object.keys(groups).forEach(function(k){
+    var g = groups[k], n = g.length; if(n < 2) return;
+    g.sort(function(a,b){ return a.id < b.id ? -1 : 1; });   // same layout every load
+    g.forEach(function(w,i){
+      var r, a;
+      if(n <= 7){                       // a ring, spaced one marker apart
+        // starting east-west: the default camera looks north, which foreshortens
+        // any north-south spacing
+        r = D / (2*Math.sin(Math.PI/n)); a = 2*Math.PI*i/n;
+      } else {                          // a sunflower spiral, so big groups stay compact
+        r = 0.62 * D * Math.sqrt(i + 0.5); a = i * 2.39996;
+      }
+      w.px = w.x + r*Math.cos(a); w.py = w.y + r*Math.sin(a); w.share = n - 1;
+    });
+  });
+})();
 /* The band is the open interval measured against depth to bedrock, so it cannot
    be recovered from completion depth alone -- the builder resolves it per well
    and ships it as `aq`. */
@@ -749,7 +830,7 @@ function refreshWells(){
       c = [c[0]*0.35 + 0.45*0.65, c[1]*0.35 + 0.47*0.65, c[2]*0.35 + 0.49*0.65];
       nCarried++;
     }
-    var x=(w.x-cx)*SC, z=-(w.y-cy)*SC;
+    var x=(w.px-cx)*SC, z=-(w.py-cy)*SC;
     sp.push(x,wy(w.ground),z, x,wy(top),z);
     sc.push(c[0],c[1],c[2], c[0],c[1],c[2]);
     pp.push(x,wy(top),z); pc.push(c[0],c[1],c[2]);
@@ -1044,7 +1125,14 @@ function pickAt(e){
   ray.setFromCamera(new THREE.Vector2(((e.clientX-r.left)/r.width)*2-1,
                                      -((e.clientY-r.top)/r.height)*2+1), camera);
   var hit = pts.visible ? ray.intersectObject(pts) : [];
-  return hit.length ? wells[visIdx[hit[0].index]] : null;
+  if(!hit.length) return null;
+  // the hits come sorted by distance from the camera, but the threshold is wider
+  // than the gap between wells fanned out from a shared section, so the nearest
+  // one to the camera is often not the one under the cursor: take the closest to
+  // the ray instead
+  var best = hit[0];
+  hit.forEach(function(h){ if(h.distanceToRay < best.distanceToRay) best = h; });
+  return wells[visIdx[best.index]];
 }
 
 function hover(e){
@@ -1094,7 +1182,10 @@ function renderReadout(w){
     '<div class="rrow"><span>Readings</span><b>'+fmt(w.n)+'</b></div>'+
     '<div class="rrow"><span>Record grade</span><b style="color:'+(gr?GRADE[gr]:'inherit')+'">'+
       (gr||'n/a')+'</b></div>'+
-    '<div class="rrow"><span>Position</span><b>'+(w.cent?'section centroid':'surveyed')+'</b></div>';
+    '<div class="rrow"><span>Position</span><b>'+(w.cent?'section centroid':'surveyed')+'</b></div>'+
+    // the marker is fanned out from the point it was modelled at; say so
+    (w.share ? '<p class="plot-none">Shares this location with '+w.share+' other well'+
+      (w.share>1?'s':'')+'; the marker is offset slightly so each one can be seen and clicked.</p>' : '');
   moveCursors();
 }
 
@@ -1114,7 +1205,7 @@ function placePin(){
   // not hover over the map at the median level either
   pinMark.visible = (h != null);
   if(h == null) return;
-  a[0]=(pinned.x-cx)*SC; a[1]=wy(h); a[2]=-(pinned.y-cy)*SC;
+  a[0]=(pinned.px-cx)*SC; a[1]=wy(h); a[2]=-(pinned.py-cy)*SC;
   pinGeo.attributes.position.needsUpdate = true;
   pinGeo.computeBoundingSphere();
 }
@@ -1948,7 +2039,7 @@ var findEl = document.getElementById('find'), findNote = document.getElementById
 
 function flyTo(w){
   var h = wellHeadNow(w); if(h == null) h = w.head;
-  tgt.set((w.x-cx)*SC, wy(h), -(w.y-cy)*SC);
+  tgt.set((w.px-cx)*SC, wy(h), -(w.py-cy)*SC);
   sph.r = 45;
   place(); placeLabels();
 }
@@ -2142,6 +2233,190 @@ document.getElementById('modal-csv').addEventListener('click', function(){
   download('cross-section' + (pr.when ? '-' + pr.when.replace(' ','-') : '') + '.csv',
            new Blob([csvOf(rows)], {type:'text/csv;charset=utf-8'}));
 });
+
+/* ---------- guided tour --------------------------------------------------- */
+/* Each stop is a full view written in the same hash format as a shareable link,
+   so it goes through applyState and the controls a user would touch; the camera is
+   then flown there rather than cut to. Captions are functions so the numbers come
+   from the model that was actually built, not from text that can go stale. */
+var TOUR_BASE = {ex:'100', op:'45', l:'111011', r:'0030', b:'-1', g:'ABCDF',
+                 wc:'grade', cm:'elev', ss:'100', t:'-1'};
+function wellById(id){ for(var i=0;i<wells.length;i++) if(wells[i].id === id) return wells[i]; return null; }
+function monthIdx(y, m){ return TM ? (y - TM.base_y)*12 + (m-1) - TM.base_m : -1; }
+function basinIdx(huc){ for(var i=0;i<BASINS.length;i++) if(BASINS[i].huc6 === huc) return i; return -1; }
+function slope(k){ return layers[k] ? layers[k].meta.terrain_slope : 'n/a'; }
+function statewide(i){ var v = TM && TM.mean[i]; return v == null ? 'n/a' : (v > 0 ? '+' : '') + fmt(v,1) + ' ft'; }
+function ftBelow(w){ return w ? fmt(w.dtw) + ' ft' : 'hundreds of feet'; }
+
+var T_WET = monthIdx(2020, 4), T_DRY = monthIdx(2023, 9), B_WIS = basinIdx('070700');
+var TOUR = [
+  { t:'Three water tables, stacked',
+    p:function(){ return 'Wisconsin has three groundwater systems at different depths: <b>shallow</b> '+
+      'sand and gravel (blue), <b>intermediate</b> bedrock (orange) and the <b>deep</b> sandstone '+
+      'aquifer more than 600 ft down (purple). Each surface is interpolated from '+
+      fmt(wells.length)+' municipal wells, and every stick is one well, drawn from the '+
+      'land surface down to its water level.'; },
+    s:{}, cam:{r:172, th:-0.62, ph:1.0} },
+  { t:'The shallow water table follows the land',
+    p:function(){ return 'With only the shallow layer and the land surface on, the two rise and fall '+
+      'together. To measure how closely, we plotted every shallow well\'s water-level elevation '+
+      'against its ground elevation and fit a straight line. Its slope is <b>b = '+slope('shallow')+
+      '</b>: for every foot the land climbs, the water table climbs about a foot, which is what '+
+      'an unconfined aquifer, open to rain from above, looks like.'; },
+    s:{l:'100010', ex:'150'}, cam:{r:140, th:-0.95, ph:1.12} },
+  { t:'The deep aquifer does not',
+    p:function(){ var b = layers.deep ? layers.deep.meta.terrain_slope : null;
+      return 'The same straight-line fit for the deep wells gives <b>b = '+slope('deep')+'</b>'+
+      (b != null ? ': the water rises only about '+fmt(b*12)+' inches for every foot of land' : '')+
+      '. It is sealed beneath confining rock, so its level is set by regional flow and by '+
+      'pumping more than by the hills above it. Darker is lower: notice the southeast.'; },
+    s:{l:'001000', ss:'200'}, cam:{r:150, th:-0.35, ph:0.95} },
+  { t:'A cone of depression under Waukesha County',
+    p:function(){ var w = wellById('LK033');
+      return 'Decades of pumping by the Milwaukee suburbs have drawn the deep aquifer down into a '+
+      'cone. At Pewaukee the water sits about <b>'+ftBelow(w)+' below ground</b>, around '+
+      (w ? fmt(w.head) : 'n/a')+' ft above sea level: more than 350 ft lower than the surface '+
+      'of Lake Michigan, about 20 miles east.'; },
+    s:{l:'001000', ss:'200'}, cam:{at:'LK033', r:110, th:-0.35, ph:0.75}, pin:'LK033' },
+  { t:'Waukesha switches to Lake Michigan water',
+    p:function(){ return 'In autumn 2023 the City of Waukesha stopped drawing from the deep sandstone '+
+      'and began buying Lake Michigan water. You can see it in the records: every city well still '+
+      'reporting that year, six deep and two shallow, goes silent between October and December '+
+      '2023. The pinned well\'s plot on the right shows its record ending there.'; },
+    s:{l:'001001', ss:'200'}, cam:{at:'BH432', r:75, th:-0.35, ph:0.9}, pin:'BH432' },
+  { t:'Spring 2020: groundwater runs high',
+    p:function(){ return '2019 was Wisconsin\'s wettest year on record, and groundwater followed. '+
+      'Coloured by change from each well\'s median, April 2020 shows blue (higher than usual) '+
+      'across most of the state, with a statewide average of <b>'+statewide(T_WET)+'</b>. Press '+
+      'play on the timeline above to watch it build.'; },
+    s:{t:String(T_WET), cm:'change'}, cam:{r:172, th:-0.62, ph:1.0}, needsTime:true },
+  { t:'Summer 2023: drought',
+    p:function(){ return 'Three and a half years later the picture flips. A dry 2023 pulled levels '+
+      'below their medians, red across much of the state, averaging <b>'+statewide(T_DRY)+
+      '</b> in September. Groundwater responds to rainfall over months, which is why the '+
+      'model is month by month.'; },
+    s:{t:String(T_DRY), cm:'change'}, cam:{r:172, th:-0.62, ph:1.0}, needsTime:true },
+  { t:'One watershed: the Wisconsin River',
+    p:function(){ var b = BASINS[B_WIS];
+      return 'Groundwater moves within river basins, so you can isolate any of the state\'s '+
+      BASINS.length+' HUC6 basins from the panel on the right. The Wisconsin River basin is the '+
+      'best covered, with <b>'+(b ? fmt(b.n_wells) : 'n/a')+' wells</b>.'; },
+    s:{b:String(B_WIS)}, cam:{basin:B_WIS, r:120, th:-0.62, ph:1.0}, needsBasin:true },
+  { t:'How far to trust it',
+    p:function(){ return 'Each well is coloured by the quality grade its record earned in cleaning, '+
+      'A (best) to F; switch grades off on the right to drop them. Well positions are '+
+      'still approximate, to about a square mile, so read this as a regional picture. From here, '+
+      'try <b>Draw a slice</b> for a cross-section, or <b>Copy link</b> to share a view.'; },
+    s:{}, cam:{r:172, th:-0.62, ph:1.0} }
+].filter(function(s){
+  // drop a stop the data cannot support rather than showing a broken one
+  if(s.needsTime && !TM) return false;
+  if(s.needsBasin && B_WIS < 0) return false;
+  if(s.pin && !wellById(s.pin)) return false;
+  return true;
+});
+
+var tourWrap = document.getElementById('tour-wrap'), tourE = document.getElementById('tour-e'),
+    tourT = document.getElementById('tour-t'), tourP = document.getElementById('tour-p'),
+    tourDots = document.getElementById('tour-dots'), tourBack = document.getElementById('tour-back'),
+    tourNext = document.getElementById('tour-next');
+var tourI = -1, tourSaved = null, camAnim = 0;
+var READ_EMPTY = body.innerHTML;
+tourDots.innerHTML = TOUR.map(function(){ return '<i></i>'; }).join('');
+
+function camGoal(c){
+  var g = {r:c.r, th:c.th, ph:c.ph, x:0, y:0, z:0};
+  var w = c.at ? wellById(c.at) : null;
+  if(w){
+    var h = wellHeadNow(w); if(h == null) h = w.head;
+    g.x = (w.px-cx)*SC; g.y = wy(h); g.z = -(w.py-cy)*SC;
+  } else if(c.basin != null && c.basin >= 0){
+    // centre on the basin's own wells, which is where its surfaces are drawn
+    var sx = 0, sy = 0, n = 0;
+    wells.forEach(function(v){ if(v.bs === c.basin){ sx += v.x; sy += v.y; n++; } });
+    if(n){ g.x = (sx/n-cx)*SC; g.z = -(sy/n-cy)*SC; }
+  }
+  return g;
+}
+function flyCam(g){
+  var id = ++camAnim;
+  var f = {r:sph.r, th:sph.th, ph:sph.ph, x:tgt.x, y:tgt.y, z:tgt.z};
+  // the short way round, not a full spin when theta has wound past 2 pi
+  var dth = ((g.th - f.th + Math.PI) % (2*Math.PI) + 2*Math.PI) % (2*Math.PI) - Math.PI;
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var T = reduce ? 0 : 1400, t0 = performance.now();
+  (function step(now){
+    if(id !== camAnim) return;                      // superseded, or the user grabbed the view
+    var k = T ? Math.min(1, (now - t0)/T) : 1, e = k<.5 ? 4*k*k*k : 1 - Math.pow(-2*k+2,3)/2;
+    sph.r = f.r + (g.r-f.r)*e; sph.th = f.th + dth*e; sph.ph = f.ph + (g.ph-f.ph)*e;
+    tgt.set(f.x + (g.x-f.x)*e, f.y + (g.y-f.y)*e, f.z + (g.z-f.z)*e);
+    place(); placeLabels();
+    if(k < 1) requestAnimationFrame(step);
+  })(t0);
+}
+// a drag or scroll mid-flight hands the camera straight back to the user
+renderer.domElement.addEventListener('pointerdown', function(){ camAnim++; });
+renderer.domElement.addEventListener('wheel', function(){ camAnim++; }, {passive:true});
+
+function stateHash(s, cam){
+  var o = {}, k;
+  for(k in TOUR_BASE) o[k] = TOUR_BASE[k];
+  for(k in s) o[k] = s[k];
+  var out = ['v=2'];
+  for(k in o) out.push(k + '=' + o[k]);
+  if(cam) out.push('cam=' + cam);
+  return '#' + out.join('&');
+}
+function tourShow(i){
+  tourI = i;
+  var s = TOUR[i];
+  if(playing) document.getElementById('tb-play').click();
+  if(!modal.hidden) closeModal();
+  if(sliceMode) document.getElementById('sl-on').click();
+  unpin(); shownWell = null; body.innerHTML = READ_EMPTY;
+  applyState(stateHash(s.s));
+  if(s.pin){ var w = wellById(s.pin); if(w) pin(w); }
+  flyCam(camGoal(s.cam));
+  tourE.textContent = 'Guided tour · ' + (i+1) + ' of ' + TOUR.length;
+  tourT.textContent = s.t;
+  tourP.innerHTML = s.p();
+  [].forEach.call(tourDots.children, function(d, j){ d.className = j === i ? 'on' : ''; });
+  tourBack.disabled = i === 0;
+  tourNext.textContent = i === TOUR.length-1 ? 'Finish' : 'Next';
+}
+function tourStart(){
+  tourSaved = '#' + serializeState();
+  tourWrap.hidden = false;
+  tourShow(0);
+  tourNext.focus();
+}
+// keep: leave the view where the tour put it (Finish); otherwise put the user back
+function tourEnd(keep){
+  if(tourI < 0) return;
+  tourI = -1; tourWrap.hidden = true;
+  if(!keep) camAnim++;                  // Finish lets the last flight land
+  if(playing) document.getElementById('tb-play').click();
+  if(!keep && tourSaved){
+    unpin(); shownWell = null; body.innerHTML = READ_EMPTY;
+    applyState(tourSaved);
+  }
+  document.getElementById('tour-go').focus();
+}
+document.getElementById('tour-go').addEventListener('click', tourStart);
+document.getElementById('tour-x').addEventListener('click', function(){ tourEnd(false); });
+tourBack.addEventListener('click', function(){ if(tourI > 0) tourShow(tourI-1); });
+tourNext.addEventListener('click', function(){
+  if(tourI < TOUR.length-1) tourShow(tourI+1); else tourEnd(true);
+});
+addEventListener('keydown', function(e){
+  if(tourI < 0 || !modal.hidden) return;
+  var t = document.activeElement && document.activeElement.tagName;
+  if(t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
+  // capture phase, so Escape ends the tour instead of also unpinning underneath it
+  if(e.key === 'Escape'){ e.stopImmediatePropagation(); tourEnd(false); }
+  else if(e.key === 'ArrowRight'){ e.preventDefault(); tourNext.click(); }
+  else if(e.key === 'ArrowLeft'){ e.preventDefault(); tourBack.click(); }
+}, true);
 
 /* ---------- loop --------------------------------------------------------- */
 function size(){
