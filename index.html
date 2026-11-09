@@ -278,6 +278,11 @@ input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer;margin:0}
 #hint b{color:var(--ink);font-weight:600}
 #hint button{margin-top:8px;font-family:var(--f-ui);font-size:10px;padding:4px 9px;cursor:pointer;
              background:transparent;color:var(--ink-2);border:1px solid var(--line);border-radius:2px}
+#hint .hint-b{display:flex;align-items:center;gap:12px;margin-top:8px}
+#hint .hint-b button{margin-top:0}
+#how-link{font-size:10.5px;font-weight:500;color:var(--accent);text-decoration:none}
+#how-link:hover{text-decoration:underline}
+#how-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #tip{position:fixed;z-index:20;pointer-events:none;padding:5px 8px;font-family:var(--f-mono);
      font-size:10.5px;background:var(--panel);border:1px solid var(--line);border-radius:2px;
      box-shadow:var(--shadow);white-space:nowrap}
@@ -470,7 +475,10 @@ input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer;margin:0}
      <span class="num">b</span> reports how closely each system tracks topography: near
      <span class="num">1.0</span> is an unconfined water table, well below <span class="num">1.0</span>
      is confinement. Depth to water is read off as the gap to the land surface.</p>
-  <button id="method-b" aria-expanded="false">Method</button>
+  <div class="hint-b">
+    <button id="method-b" aria-expanded="false">Method</button>
+    <a id="how-link" href="methods.html">How this was made &rarr;</a>
+  </div>
 </footer>
 
 <div id="tour-wrap" hidden>
